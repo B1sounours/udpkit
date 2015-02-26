@@ -262,6 +262,26 @@ namespace UdpKit {
     }
 
     /// <summary>
+    /// Drain the socket of events, or up to drain's length, whichever is smaller
+    /// </summary>
+    /// <param name="drain"></param>
+    /// <returns>how many events were drained into drain</returns>
+    public int Drain(UdpEvent[] drain)
+    {
+      int i = 0;
+      lock (eventQueueOut)
+      {
+        //todo: due to this not being a simple for loop, does the jitter still optimize the length accessor
+        //or should it be moved out into a local variable, for speed purposes.
+        for (; i < drain.Length && eventQueueOut.Count > 0; i++)
+        {
+          drain[i] = eventQueueOut.Dequeue();
+        }
+      }
+      return i + 1;
+    }
+
+    /// <summary>
     /// Peek the next event from the socket
     /// </summary>
     /// <param name="ev">The next event on this socket</param>
