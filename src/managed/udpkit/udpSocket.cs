@@ -77,6 +77,7 @@ namespace UdpKit {
     readonly Queue<UdpEvent> eventQueueIn;
     readonly Queue<UdpEvent> eventQueueOut;
     readonly UdpSerializerFactory serializerFactory;
+    readonly UdpSerializer serializer;
     readonly List<UdpConnection> connList = new List<UdpConnection>();
     readonly UdpSet<UdpEndPoint> pendingConnections = new UdpSet<UdpEndPoint>(new UdpEndPoint.Comparer());
     readonly Dictionary<UdpEndPoint, UdpConnection> connLookup = new Dictionary<UdpEndPoint, UdpConnection>(new UdpEndPoint.Comparer());
@@ -150,6 +151,7 @@ namespace UdpKit {
       this.Config = config.Duplicate();
       this.configCopy = config;
 
+      serializer = CreateSerializer();
       state = UdpSocketState.Created;
       random = new Random();
       stats = new UdpStats();
@@ -193,6 +195,16 @@ namespace UdpKit {
     /// <param name="endpoint">The endpoint to connect to</param>
     public void Connect (UdpEndPoint endpoint) {
       Raise(UdpEvent.INTERNAL_CONNECT, endpoint);
+    }
+
+    /// <summary>
+    /// Connect to remote endpoint
+    /// </summary>
+    /// <param name="endpoint">The endpoint to connect to</param>
+    /// <param name="hailObject">An object to send along with the connect</param>
+    public void Connect(UdpEndPoint endpoint, object hailObject)
+    {
+        Raise(UdpEvent.INTERNAL_CONNECT, endpoint, hailObject);
     }
 
     /// <summary>
@@ -284,6 +296,15 @@ namespace UdpKit {
       ev.Type = eventType;
       ev.EndPoint = endpoint;
       Raise(ev);
+    }
+
+    internal void Raise(int eventType, UdpEndPoint endpoint, object obj)
+    {
+        UdpEvent ev = new UdpEvent();
+        ev.Type = eventType;
+        ev.EndPoint = endpoint;
+        ev.Object = obj;
+        Raise(ev);
     }
 
     internal void Raise (int eventType, UdpConnection connection) {
@@ -411,13 +432,13 @@ namespace UdpKit {
       return true;
     }
 
-    UdpConnection CreateConnection (UdpEndPoint endpoint, UdpConnectionMode mode) {
+    UdpConnection CreateConnection (UdpEndPoint endpoint, UdpConnectionMode mode, object hailMessage) {
       if (connLookup.ContainsKey(endpoint)) {
         UdpLog.Warn("connection for {0} already exists", endpoint);
         return default(UdpConnection);
       }
 
-      UdpConnection cn = new UdpConnection(this, mode, endpoint);
+      UdpConnection cn = new UdpConnection(this, mode, endpoint, hailMessage);
       connLookup.Add(endpoint, cn);
       connList.Add(cn);
 
@@ -537,7 +558,7 @@ namespace UdpKit {
 
     void OnEventConnect (UdpEvent ev) {
       if (CheckState(UdpSocketState.Running)) {
-        UdpConnection cn = CreateConnection(ev.EndPoint, UdpConnectionMode.Client);
+        UdpConnection cn = CreateConnection(ev.EndPoint, UdpConnectionMode.Client, ev.Object);
 
         if (cn == null) {
           UdpLog.Error("could not create connection for endpoint {0}", ev.EndPoint.ToString());
@@ -625,7 +646,7 @@ namespace UdpKit {
     }
 
     void AcceptConnection (UdpEndPoint ep) {
-      UdpConnection cn = CreateConnection(ep, UdpConnectionMode.Server);
+      UdpConnection cn = CreateConnection(ep, UdpConnectionMode.Server, null);
       cn.ChangeState(UdpConnectionState.Connected);
     }
 
@@ -711,7 +732,13 @@ namespace UdpKit {
             AcceptConnection(ep);
           } else {
             if (pendingConnections.Add(ep)) {
-              Raise(UdpEvent.PUBLIC_CONNECT_REQUEST, ep);
+              object obj = null;
+              if ((buffer.Data[0] & 1) == 1)
+              {
+                //they've also sent an object along with their connection request
+                serializer.Unpack(buffer, ref obj);
+              }
+              Raise(UdpEvent.PUBLIC_CONNECT_REQUEST, ep, obj);
             }
           }
         } else {

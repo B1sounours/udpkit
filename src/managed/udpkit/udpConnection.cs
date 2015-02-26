@@ -150,14 +150,17 @@ namespace UdpKit {
         uint recvSinceLastSend;
         uint connectTimeout;
         uint connectAttempts;
+        object hailMessage;
 
         internal UdpSocket socket;
         internal UdpConnectionState state;
 
-        internal UdpConnection (UdpSocket s, UdpConnectionMode m, UdpEndPoint ep) {
+        internal UdpConnection (UdpSocket s, UdpConnectionMode m, UdpEndPoint ep, object hm) {
             socket = s;
             mode = m;
             endpoint = ep;
+            hailMessage = hm;
+            
             stats = new UdpStats();
             networkRtt = socket.Config.DefaultNetworkPing;
             aliasedRtt = socket.Config.DefaultAliasedPing;
@@ -333,13 +336,23 @@ namespace UdpKit {
             }
         }
 
-        internal void SendCommand (UdpCommandType cmd) {
+        internal void SendCommand(UdpCommandType cmd) {
+            SendCommand(cmd, null);
+        }
+
+        internal void SendCommand (UdpCommandType cmd, object o) {
             if (CheckCanSend(true) == UdpSendFailReason.None) {
                 UdpStream stream = socket.GetWriteStream(mtu << 3, UdpSocket.HeaderBitSize);
                 stream.WriteByte((byte) cmd, 8);
 
-                UdpHeader header = MakeHeader(false);
+                if (o != null)
+                  serializer.Pack(stream, ref o);
+
+                UdpHeader header = MakeHeader(o != null);
                 header.Pack(stream, socket);
+                //in order to prevent weirdness, revert the header's 'IsObject' so that other stuff doesn't think it's one (as this is really a command)
+                //additionally, we won't set the handle's object, as we don't want ack information for it
+                header.IsObject = false;
 
                 UdpHandle handle = MakeHandle(ref header);
                 handle.Object = null;
@@ -572,7 +585,7 @@ namespace UdpKit {
                     UdpLog.Info("retrying connection to {0}", endpoint.ToString());
                 }
 
-                SendCommand(UdpCommandType.Connect);
+                SendCommand(UdpCommandType.Connect, hailMessage);
 
                 connectTimeout = socket.GetCurrentTime() + socket.Config.ConnectRequestTimeout;
                 connectAttempts += 1u;
