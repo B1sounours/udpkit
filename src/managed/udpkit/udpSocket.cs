@@ -223,6 +223,10 @@ namespace UdpKit {
       Raise(UdpEvent.INTERNAL_ACCEPT, endpoint);
     }
 
+    public void Accept (UdpEndPoint endPoint, object replyObject) {
+      Raise(UdpEvent.INTERNAL_ACCEPT, endPoint, replyObject);
+    }
+
     /// <summary>
     /// Refuse a connection request from a remote endpoint
     /// </summary>
@@ -593,7 +597,7 @@ namespace UdpKit {
 
     void OnEventAccept (UdpEvent ev) {
       if (pendingConnections.Remove(ev.EndPoint)) {
-        AcceptConnection(ev.EndPoint);
+        AcceptConnection(ev.EndPoint, ev.Object);
       }
     }
 
@@ -645,8 +649,8 @@ namespace UdpKit {
       ev.Connection.OnEventConnectionOption(ev);
     }
 
-    void AcceptConnection (UdpEndPoint ep) {
-      UdpConnection cn = CreateConnection(ep, UdpConnectionMode.Server, null);
+    void AcceptConnection (UdpEndPoint ep, object replyObj) {
+      UdpConnection cn = CreateConnection(ep, UdpConnectionMode.Server, replyObj);
       cn.ChangeState(UdpConnectionState.Connected);
     }
 
@@ -729,11 +733,11 @@ namespace UdpKit {
       if (buffer.ReadByte(8) == (byte) UdpCommandType.Connect) {
         if (Config.AllowIncommingConnections && ((connLookup.Count + pendingConnections.Count) < Config.ConnectionLimit || Config.ConnectionLimit == -1)) {
           if (Config.AutoAcceptIncommingConnections) {
-            AcceptConnection(ep);
+            AcceptConnection(ep, null);
           } else {
             if (pendingConnections.Add(ep)) {
               object obj = null;
-              if ((buffer.Data[0] & 1) == 1)
+              if (buffer.ReadByte(8) == UdpEvent.INTERNAL_COMMAND_HASOBJECT)
               {
                 //they've also sent an object along with their connection request
                 serializer.Unpack(buffer, ref obj);

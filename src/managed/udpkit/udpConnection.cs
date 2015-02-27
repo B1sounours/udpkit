@@ -346,12 +346,13 @@ namespace UdpKit {
                 stream.WriteByte((byte) cmd, 8);
 
                 if (o != null)
-                  serializer.Pack(stream, ref o);
+                {
+                    stream.WriteByte(UdpEvent.INTERNAL_COMMAND_HASOBJECT);
+                    serializer.Pack(stream, ref o);
+                }
 
-                UdpHeader header = MakeHeader(o != null);
+                UdpHeader header = MakeHeader(false);
                 header.Pack(stream, socket);
-                //in order to prevent weirdness, revert the header's 'IsObject' so that other stuff doesn't think it's one (as this is really a command)
-                //additionally, we won't set the handle's object, as we don't want ack information for it
                 header.IsObject = false;
 
                 UdpHandle handle = MakeHandle(ref header);
@@ -485,10 +486,10 @@ namespace UdpKit {
                 UdpLog.Info("connected to {0} ({1})", endpoint.ToString(), mode);
 
                 if (IsServer) {
-                    SendCommand(UdpCommandType.Accepted);
+                    SendCommand(UdpCommandType.Accepted, hailMessage);
                 }
 
-                socket.Raise(UdpEvent.PUBLIC_CONNECTED, this);
+                socket.Raise(UdpEvent.PUBLIC_CONNECTED, this, hailMessage);
             }
         }
 
@@ -509,7 +510,7 @@ namespace UdpKit {
         void OnCommandConnect (UdpStream buffer) {
             if (IsServer) {
                 if (CheckState(UdpConnectionState.Connected)) {
-                    SendCommand(UdpCommandType.Accepted);
+                    SendCommand(UdpCommandType.Accepted, hailMessage);
                 }
             } else {
                 ConnectionError(UdpConnectionError.IncorrectCommand);
@@ -519,6 +520,8 @@ namespace UdpKit {
         void OnCommandAccepted (UdpStream buffer) {
             if (IsClient) {
                 if (CheckState(UdpConnectionState.Connecting)) {
+                    if (buffer.CanRead(8) && buffer.ReadByte(8) == UdpEvent.INTERNAL_COMMAND_HASOBJECT)
+                        serializer.Unpack(buffer, ref hailMessage);
                     ChangeState(UdpConnectionState.Connected);
                 }
             } else {

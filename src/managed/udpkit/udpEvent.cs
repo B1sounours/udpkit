@@ -83,6 +83,8 @@ namespace UdpKit {
         internal const int PUBLIC_STARTED = 24;
         internal const int PUBLIC_START_FAILED = 26;
 
+        internal const byte INTERNAL_COMMAND_HASOBJECT = 175;
+
         [FieldOffset(0)]
         internal int Type;
 
